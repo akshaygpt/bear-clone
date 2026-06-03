@@ -29,3 +29,11 @@
 /* helpers for responsive button visibility */
 .only-narrow { display: none; }
 .scrim { display: none; }
+
+/* Network error banner — floats over the note-list column */
+.network-error {
+  position: fixed; top: 0; left: 232px; right: 0; z-index: 200;
+  padding: 8px 16px; font-size: 13px; text-align: center;
+  background: #c0392b; color: #fff;
+  pointer-events: none;
+}
