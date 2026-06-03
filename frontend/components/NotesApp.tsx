@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNotes } from "@/hooks/useNotes";
 import type { Note } from "@/lib/notes";
 import { buildTagTree } from "@/lib/tags";
@@ -49,7 +49,7 @@ const SHORTCUTS: Record<string, FilterType> = {
 };
 
 export default function NotesApp() {
-  const { notes, create, edit, remove } = useNotes();
+  const { notes, create, edit, remove, loading, error } = useNotes();
   const { settings, update: updateSettings, resetTypography } = useSettings();
 
   const [theme, setTheme] = useState<ThemeName>("light");
@@ -228,10 +228,14 @@ export default function NotesApp() {
   }, [selectedNote?.id]);
 
   // Latest draft / note kept in refs so save() can flush without being rebuilt.
+  // useLayoutEffect (runs synchronously after commit, before regular effects) keeps
+  // these current without the render-phase side-effect lint violation.
   const draftRef = useRef(draft);
-  draftRef.current = draft;
   const selectedRef = useRef(selectedNote);
-  selectedRef.current = selectedNote;
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+    selectedRef.current = selectedNote;
+  });
 
   // Persist the current draft if it differs from the stored note. The no-op
   // guard means moving the caret around (no text change) never hits the API.
@@ -254,11 +258,17 @@ export default function NotesApp() {
 
   const openNote = useCallback(
     (note: Note) => {
-      void save(); // flush pending edits on the note we're leaving
+      // Snapshot BEFORE state changes so the async flush always targets the note
+      // we're leaving, not whatever selectedRef happens to point to later.
+      const prev = selectedRef.current;
+      const d = draftRef.current;
       setSelectedId(note.id);
       setMobileView("editor");
+      if (prev && (d.title !== prev.title || d.content !== prev.content)) {
+        void edit(prev.id, { title: d.title, content: d.content });
+      }
     },
-    [save],
+    [edit],
   );
 
   const onFilter = useCallback((f: Filter) => {
@@ -272,7 +282,12 @@ export default function NotesApp() {
   }, []);
 
   const compose = useCallback(async () => {
-    void save();
+    // Snapshot before async gap so the flush targets the note we're leaving.
+    const prev = selectedRef.current;
+    const d = draftRef.current;
+    if (prev && (d.title !== prev.title || d.content !== prev.content)) {
+      void edit(prev.id, { title: d.title, content: d.content });
+    }
     // "Create new notes with" (General settings): seed an empty heading line or
     // start with plain body text.
     const content = settings.newNoteWith === "heading" ? "# " : "";
@@ -283,7 +298,7 @@ export default function NotesApp() {
       setMobileView("editor");
       setDrawerOpen(false);
     }
-  }, [create, save, settings.newNoteWith]);
+  }, [create, edit, settings.newNoteWith]);
 
   const toggleFlag = useCallback((key: keyof FlagSets, id: number) => {
     setFlags((prev) => {
@@ -321,6 +336,11 @@ export default function NotesApp() {
 
   return (
     <div className={appClass} data-theme={theme} style={settingsToCssVars(settings) as CSSProperties}>
+      {error && (
+        <div className="network-error" role="alert">
+          {loading ? "Connecting…" : `Could not reach the server — ${error}`}
+        </div>
+      )}
       <div className="scrim" onClick={() => setDrawerOpen(false)} />
 
       <Sidebar

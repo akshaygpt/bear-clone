@@ -21,7 +21,8 @@ export interface Block {
 const RE_FENCE = /^```/;
 const RE_OL = /^\s*\d+\.\s+/;
 const RE_QUOTE = /^\s*>\s?/;
-const RE_TABLE = /^\s*\|.*\|\s*$/;
+const RE_TABLE_ROW = /^\s*\|.*\|\s*$/;
+const RE_TABLE_SEP = /^\s*\|?[\s:|-]+\|?\s*$/;
 
 /**
  * Split `content` into editable blocks. Always returns at least one block so an
@@ -54,7 +55,19 @@ export function segmentBlocks(content: string): Block[] {
       blocks.push({ start, end: i - 1 });
       return true;
     };
-    if (runStart(RE_OL) || runStart(RE_QUOTE) || runStart(RE_TABLE)) continue;
+
+    // Table: only group when the header row is immediately followed by a
+    // separator (|---|---| pattern) — mirroring renderMarkdown's table rule.
+    // A lone pipe-delimited line with no separator falls through to single-line.
+    if (RE_TABLE_ROW.test(line) && i + 1 < lines.length && RE_TABLE_SEP.test(lines[i + 1])) {
+      const start = i;
+      i += 2; // consume header + separator
+      while (i < lines.length && RE_TABLE_ROW.test(lines[i])) i++;
+      blocks.push({ start, end: i - 1 });
+      continue;
+    }
+
+    if (runStart(RE_OL) || runStart(RE_QUOTE)) continue;
 
     // Everything else (heading, hr, bullet, to-do, paragraph, blank) = one line.
     blocks.push({ start: i, end: i });

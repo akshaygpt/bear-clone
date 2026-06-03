@@ -50,6 +50,7 @@ export function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
   const secs = Math.floor((Date.now() - then) / 1000);
+  if (secs < 0) return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   if (secs < 45) return "just now";
   if (secs < 3600) return `${Math.floor(secs / 60)}m`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
